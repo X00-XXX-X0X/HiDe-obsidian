@@ -23,11 +23,11 @@ export class HideSettingTab extends PluginSettingTab {
       .addText((t) => t.setPlaceholder("Hierarchical deconstruction").setValue(s.folder).onChange((v) => { s.folder = v.trim().replace(/^\/+|\/+$/g, ""); this.plugin.save(); this.plugin.refreshViews(); }));
 
     new Setting(el).setName(tr("Animation speed", "Скорость анимаций")).setDesc(tr("0 disables animations.", "0 — без анимаций."))
-      .addSlider((sl) => sl.setLimits(0, 4, 0.25).setValue(s.anim).setDynamicTooltip().onChange((v) => { s.anim = v; this.plugin.save(); this.plugin.views().forEach((x) => x.applySettings()); }));
+      .addSlider((sl) => sl.setLimits(0, 4, 0.25).setValue(s.anim).onChange((v) => { s.anim = v; this.plugin.save(); this.plugin.views().forEach((x) => x.applySettings()); }));
 
     new Setting(el).setName(tr("Graph forces", "Силы графа")).setHeading();
     for (const sl of SLIDERS) {
-      new Setting(el).setName(sl.name).addSlider((c) => c.setLimits(sl.min, sl.max, sl.step).setValue(s.physics[sl.key]).setDynamicTooltip()
+      new Setting(el).setName(sl.name).addSlider((c) => c.setLimits(sl.min, sl.max, sl.step).setValue(s.physics[sl.key])
         .onChange((v) => { s.physics[sl.key] = v; this.plugin.save(); this.plugin.views().forEach((x) => x.applySettings()); }));
     }
 

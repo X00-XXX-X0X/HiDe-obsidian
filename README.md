@@ -26,7 +26,17 @@ state: done                                           # optional, sets the node 
 - Local graph of any note with adjustable depth.
 - Editable states with colors; live force sliders (center, repel, link strength/distance, hierarchy pull, line width).
 - Cycles are rejected: a skill can't be built from something built from it.
+- Physics by d3-force and WebGL rendering (PIXI), like the core graph.
 
 ## Install (manual)
 
 Copy `main.js`, `manifest.json`, `styles.css` into `<vault>/.obsidian/plugins/hide/` and enable the plugin.
+
+## Development
+
+```
+npm install
+npm run build
+```
+
+Release: bump the version in `manifest.json` and `versions.json`, push a git tag equal to the version — the workflow publishes the release.

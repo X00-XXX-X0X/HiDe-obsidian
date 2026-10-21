@@ -1,6 +1,6 @@
 {
   "name": "obsidian-hide",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": true,
   "description": "HiDe — плагин Обсидиана",
   "scripts": {
@@ -10,7 +10,6 @@
   "devDependencies": {
     "@types/d3-force": "^3.0.10",
     "@types/node": "^22.9.0",
-    "builtin-modules": "^4.0.0",
     "esbuild": "^0.24.0",
     "obsidian": "latest",
     "tslib": "^2.8.0",

@@ -123,14 +123,14 @@ export default class HidePlugin extends Plugin {
     if (g.get(skill)?.includes(base)) return;
     if (reaches(g, base, skill)) throw new Error(tr(`cycle: “${b.basename}” is already built from “${s.basename}”`, `цикл: «${b.basename}» уже строится из «${s.basename}»`));
     const link = `[[${this.app.metadataCache.fileToLinktext(b, s.path, true)}]]`;
-    await this.app.fileManager.processFrontMatter(s, (fm) => { const cur = asList(fm.requires); cur.push(link); fm.requires = cur; });
+    await this.app.fileManager.processFrontMatter(s, (fm: Record<string, unknown>) => { const cur = asList(fm.requires); cur.push(link); fm.requires = cur; });
   }
 
   async unlink(skill: string, base: string): Promise<void> {
     const s = this.file(skill);
     if (!s) return;
     const mc = this.app.metadataCache;
-    await this.app.fileManager.processFrontMatter(s, (fm) => {
+    await this.app.fileManager.processFrontMatter(s, (fm: Record<string, unknown>) => {
       fm.requires = asList(fm.requires).filter((x) => { const t = wikiTarget(x); return !(t && mc.getFirstLinkpathDest(t, s.path)?.path === base); });
     });
   }
@@ -138,7 +138,7 @@ export default class HidePlugin extends Plugin {
   async setState(path: string, state: string): Promise<void> {
     const f = this.file(path);
     if (!f) return;
-    await this.app.fileManager.processFrontMatter(f, (fm) => { if (state) fm.state = state; else delete fm.state; });
+    await this.app.fileManager.processFrontMatter(f, (fm: Record<string, unknown>) => { if (state) fm.state = state; else delete fm.state; });
   }
 
   /** Удаление в корзину; ссылки на неё у других навыков убираем, чтобы не оставлять битых. */

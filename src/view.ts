@@ -73,7 +73,7 @@ export class HideView extends ItemView {
   }
 
   async onClose(): Promise<void> {
-    cancelAnimationFrame(this.raf);
+    window.cancelAnimationFrame(this.raf);
     this.ro?.disconnect();
     this.gfx?.destroy();
   }
@@ -130,13 +130,13 @@ export class HideView extends ItemView {
 
   // ---------- «+ Нода»: самостоятельная новая нода ----------
   private createStandalone(): void {
-    new NameModal(this.app, async (title) => {
+    new NameModal(this.app, (title) => void (async () => {
       try {
         if (this.plugin.findByTitle(title)) throw new Error(tr("A skill with this name already exists", "Навык с таким названием уже есть"));
         const path = await this.plugin.createNote(title);
         window.setTimeout(() => { this.refresh(); this.eng.selectNode(path); }, 300);
       } catch (e) { this.plugin.notice(e instanceof Error ? e.message : String(e)); }
-    }).open();
+    })()).open();
   }
 
   // ---------- «+» под нодой: то же окно, что у «+ Нода», но нода привязывается к выбранной ----------
@@ -178,9 +178,9 @@ export class HideView extends ItemView {
         this.eng.frame(dt);
         if (this.eng.consumeRedraw()) this.gfx.draw(this.eng);
       }
-      this.raf = requestAnimationFrame(loop);
+      this.raf = window.requestAnimationFrame(loop);
     };
-    this.raf = requestAnimationFrame(loop);
+    this.raf = window.requestAnimationFrame(loop);
 
   }
 

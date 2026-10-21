@@ -1,14 +1,14 @@
-import { Application, Container, Graphics, Sprite, Text, Texture, type TextStyle } from "pixi.js";
+import { Application, Container, Graphics, Sprite, Text, Texture } from "pixi.js";
 import { cssVar, type Engine, type N } from "./sim";
 
 /** CSS-цвет (hex, rgb, hsl, имя) → число для PIXI; разбор через canvas, чтобы понимать любые значения переменных темы. */
-const probe = document.createElement("canvas").getContext("2d")!;
+const probe = createEl("canvas").getContext("2d")!;
 const colorCache = new Map<string, number>();
 function toHex(css: string): number {
   let v = colorCache.get(css);
   if (v === undefined) {
     probe.fillStyle = "#888"; probe.fillStyle = css;
-    const s = probe.fillStyle as string;
+    const s = probe.fillStyle;
     if (s.startsWith("#")) v = parseInt(s.slice(1), 16);
     else { const m = s.match(/[\d.]+/g) ?? ["136", "136", "136"]; v = (Math.round(+m[0]) << 16) | (Math.round(+m[1]) << 8) | Math.round(+m[2]); }
     colorCache.set(css, v);
@@ -32,7 +32,7 @@ export class GraphRenderer {
   private themeKey = "";
 
   constructor(canvas: HTMLCanvasElement) {
-    this.app = new Application({ view: canvas, backgroundAlpha: 0, antialias: true, autoDensity: true, resolution: window.devicePixelRatio || 1, autoStart: false, width: 300, height: 200 });
+    this.app = new Application({ view: canvas, backgroundAlpha: 0, antialias: true, autoDensity: false, resolution: window.devicePixelRatio || 1, autoStart: false, width: 300, height: 200 });
     const g = new Graphics().beginFill(0xffffff).drawCircle(32, 32, 31).endFill();
     this.circle = this.app.renderer.generateTexture(g, { resolution: 2 });
     g.destroy();
@@ -130,7 +130,7 @@ export class GraphRenderer {
   private label(n: N): Text {
     let t = this.labels.get(n.id);
     if (!t) {
-      t = new Text(n.title, { fontFamily: "system-ui, sans-serif", fontSize: 24, fill: toHex(this.labelFill || cssVar("--hide-label")) } as Partial<TextStyle>);
+      t = new Text(n.title, { fontFamily: "system-ui, sans-serif", fontSize: 24, fill: toHex(this.labelFill || cssVar("--hide-label")) });
       t.anchor.set(0.5, 0); t.resolution = 2; this.labelLayer.addChild(t); this.labels.set(n.id, t);
     }
     if (t.text !== n.title) t.text = n.title;

@@ -28,7 +28,8 @@ export class AddBaseModal extends SuggestModal<Item> {
     if (item.kind === "create") el.addClass("hide-create");
   }
 
-  async onChooseSuggestion(item: Item): Promise<void> {
+  onChooseSuggestion(item: Item): void { void this.choose(item); }
+  private async choose(item: Item): Promise<void> {
     try {
       const path = item.kind === "existing" ? item.e.path : await this.plugin.createNote(item.title);
       if (this.skill) await this.plugin.link(this.skill, path);
@@ -55,7 +56,7 @@ export class StateModal extends SuggestModal<StateItem> {
     if (s.color) dot.style.background = s.color;
     el.createSpan({ text: " " + s.name });
   }
-  async onChooseSuggestion(s: StateItem): Promise<void> { await this.plugin.setState(this.path, s.id); }
+  onChooseSuggestion(s: StateItem): void { void this.plugin.setState(this.path, s.id); }
 }
 
 export class NameModal extends Modal {

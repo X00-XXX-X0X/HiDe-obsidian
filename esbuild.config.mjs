@@ -1,5 +1,5 @@
 import esbuild from "esbuild";
-import builtins from "builtin-modules";
+import { builtinModules as builtins } from "node:module";
 
 const watch = process.argv.includes("--watch");
 const ctx = await esbuild.context({
