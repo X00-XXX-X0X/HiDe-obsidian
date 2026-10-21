@@ -4,7 +4,7 @@
   "version": "0.1.0",
   "minAppVersion": "1.4.0",
   "description": "Build and browse skills as a hierarchy: each skill is built from its foundations. Focus view, states and quick creation of foundations.",
-  "author": "Gosha",
+  "author": "Graand",
   "isDesktopOnly": true,
   "authorUrl": "https://github.com/X00-XXX-X0X"
 }
