@@ -1,9 +1,14 @@
 import { Application, Container, Graphics, Sprite, Text, Texture } from "pixi.js";
 import { cssVar, type Engine, type N } from "./sim";
 
-/** CSS-цвет (hex, rgb, hsl, имя) → число для PIXI; разбор через canvas, чтобы понимать любые значения переменных темы. */
 const probe = createEl("canvas").getContext("2d")!;
 const colorCache = new Map<string, number>();
+function mix(a: number, b: number, t: number): number {
+  if (t <= 0) return a;
+  if (t >= 1) return b;
+  const ch = (sh: number) => Math.round(((a >> sh) & 255) * (1 - t) + ((b >> sh) & 255) * t);
+  return (ch(16) << 16) | (ch(8) << 8) | ch(0);
+}
 function toHex(css: string): number {
   let v = colorCache.get(css);
   if (v === undefined) {
@@ -16,7 +21,6 @@ function toHex(css: string): number {
   return v;
 }
 
-/** Отрисовка графа на WebGL (PIXI), как в графе Обсидиана. Логика, физика и попадание мышью — в Engine. */
 export class GraphRenderer {
   private app: Application;
   private world = new Container();
@@ -47,15 +51,13 @@ export class GraphRenderer {
     const { w, h, cam } = e;
     this.world.position.set(w / 2 - cam.x * cam.k, h / 2 - cam.y * cam.k);
     this.world.scale.set(cam.k);
-    const hot = e.hover ?? e.selected;
-    const hotSet = new Set<string>(hot ? [hot, ...(e.requires.get(hot) ?? []), ...(e.usedBy.get(hot) ?? [])] : []);
     const cEdge = toHex(cssVar("--hide-edge")), cEdgeHl = toHex(cssVar("--hide-edge-hl"));
     const cNode = toHex(cssVar("--hide-node")), cHl = toHex(cssVar("--hide-node-hl")), cSel = toHex(cssVar("--hide-node-sel"));
     const vx0 = cam.x - w / 2 / cam.k - 60, vx1 = cam.x + w / 2 / cam.k + 60, vy0 = cam.y - h / 2 / cam.k - 60, vy1 = cam.y + h / 2 / cam.k + 60;
 
-    // связи и стрелки
     const g = this.edges; g.clear();
-    for (const [p, q] of e.edgeRefs) {
+    for (let i = 0; i < e.edgeRefs.length; i++) {
+      const [p, q] = e.edgeRefs[i];
       const pa = p.id, ch = q.id;
       if ((p.x < vx0 && q.x < vx0) || (p.x > vx1 && q.x > vx1) || (p.y < vy0 && q.y < vy0) || (p.y > vy1 && q.y > vy1)) continue;
       const va = Math.min(p.vis, q.vis);
@@ -64,14 +66,14 @@ export class GraphRenderer {
       const dx = q.x - p.x, dy = q.y - p.y, d = Math.hypot(dx, dy);
       if (d < p.r + q.r + 2) continue;
       const ux = dx / d, uy = dy / d;
-      const hl = hot !== null && (pa === hot || ch === hot);
-      const alpha = va * (hot && !hl ? 0.35 : 1), color = hl ? cEdgeHl : cEdge;
-      const width = ((hl ? 1.8 : 1.1) * e.settings.lineWidth) / Math.max(cam.k, 0.5);
+      const hl = e.edgeHl[i];
+      const alpha = va * e.edgeDim[i], color = mix(cEdge, cEdgeHl, hl);
+      const width = ((1.1 + 0.7 * hl) * e.settings.lineWidth) / Math.max(cam.k, 0.5);
       const ax = p.x + ux * p.r, ay = p.y + uy * p.r, bx = q.x - ux * (q.r + 1), by = q.y - uy * (q.r + 1);
       const s = 7 / Math.max(cam.k, 0.6);
       const ex = e.view.arrows ? bx - ux * s * 0.6 : bx, ey = e.view.arrows ? by - uy * s * 0.6 : by;
       g.lineStyle({ width, color, alpha });
-      if (e.ghosts.has(ch)) {  // призраки — пунктиром
+      if (e.ghosts.has(ch)) {
         const dash = 5 / cam.k, gap = 4 / cam.k, len = Math.hypot(ex - ax, ey - ay);
         for (let t = 0; t < len; t += dash + gap) {
           const t2 = Math.min(t + dash, len);
@@ -84,36 +86,32 @@ export class GraphRenderer {
       }
     }
 
-    // ноды, кольца, подписи
     const labelFill = cssVar("--hide-label");
     if (labelFill !== this.labelFill) { this.labelFill = labelFill; for (const t of this.labels.values()) t.style.fill = toHex(labelFill); }
     this.rings.clear();
-    const live = new Set<string>();
     const lz = e.view.labelZoom, fs = 12 / cam.k;
     for (const n of e.list) {
       const on = n.vis >= 0.02 && n.x >= vx0 && n.x <= vx1 && n.y >= vy0 && n.y <= vy1;
       const sp = this.sprite(n.id), tx = this.label(n);
       sp.visible = on; tx.visible = false;
       if (!on) continue;
-      live.add(n.id);
-      const dim = hot && !hotSet.has(n.id) && e.mode === "free" ? 0.35 : 1;
-      sp.position.set(n.x, n.y); sp.width = sp.height = n.r * 2;
-      sp.tint = e.view.colors.get(n.id) ? toHex(e.view.colors.get(n.id)!) : n.color ? toHex(n.color) : cNode;
+      const dim = n.dim, grow = 0.4 + 0.6 * n.vis, r = n.r * grow;
+      sp.position.set(n.x, n.y); sp.width = sp.height = r * 2;
+      sp.tint = n.color ? toHex(n.color) : cNode;
       sp.alpha = n.vis * dim;
-      if (n.id === e.selected) this.rings.lineStyle({ width: 2 / cam.k, color: cSel, alpha: n.vis }).drawCircle(n.x, n.y, n.r + 4 / cam.k);
-      else if (n.id === e.hover) this.rings.lineStyle({ width: 1.5 / cam.k, color: cHl, alpha: n.vis }).drawCircle(n.x, n.y, n.r + 3 / cam.k);
+      if (n.id === e.selected) this.rings.lineStyle({ width: 2 / cam.k, color: cSel, alpha: n.vis }).drawCircle(n.x, n.y, r + 4 / cam.k);
+      else if (n.id === e.hover) this.rings.lineStyle({ width: 1.5 / cam.k, color: cHl, alpha: n.vis }).drawCircle(n.x, n.y, r + 3 / cam.k);
       const la = n.id === e.selected || n.id === e.hover || e.mode !== "free" ? 1 : Math.min(1, Math.max(0, (cam.k - lz * 0.7) / (lz * 0.5 + 1e-6)));
       if (la > 0.03) {
         tx.visible = true; tx.alpha = n.vis * dim * la;
-        tx.scale.set(fs / 24);   // текст рисуется крупно и ужимается — чёткий на любом масштабе
-        tx.position.set(n.x, n.y + n.r + fs * 1.15);
+        tx.scale.set(fs / 24);
+        tx.position.set(n.x, n.y + r + fs * 1.15);
       }
     }
     for (const id of [...this.sprites.keys()]) if (!e.nodes.has(id)) { this.sprites.get(id)!.destroy(); this.sprites.delete(id); this.labels.get(id)?.destroy(); this.labels.delete(id); }
 
-    // кнопка «+» под выбранной нодой — в экранных координатах, постоянного размера
     const u = this.ui; u.clear();
-    const pl = e.addingFor ? null : e.plusScreen();
+    const pl = e.plusScreen();
     if (pl) {
       const col = e.plusHover ? cHl : cSel;
       u.lineStyle({ width: 1.5, color: col }).beginFill(toHex(cssVar("--hide-surface"))).drawCircle(pl[0], pl[1], 11).endFill()

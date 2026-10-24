@@ -1,9 +1,9 @@
 {
   "id": "hide",
-  "name": "HiDe",
-  "version": "0.1.2",
-  "minAppVersion": "1.8.7",
-  "description": "Build and browse skills as a hierarchy: each skill is built from its foundations. Focus view, states and quick creation of foundations.",
+  "name": "Hierarchical deconstruction (HiDe)",
+  "version": "0.2.0",
+  "minAppVersion": "1.13.0",
+  "description": "Hierarchical deconstruction of skills: map every skill as a tree of simpler skills, zoom into any of them and track your progress.",
   "author": "Graand",
   "isDesktopOnly": true,
   "authorUrl": "https://github.com/X00-XXX-X0X"

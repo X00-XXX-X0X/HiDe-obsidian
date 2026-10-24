@@ -1,42 +1,24 @@
-# HiDe — hierarchical deconstruction of skills
+# Hierarchical deconstruction (HiDe)
 
-A graph where every skill is **built from its foundations**. Pick a skill and the camera zooms in: its foundations unfold beneath it, and faded "ghosts" above show what the skill is used for. Arrows point from foundation to skill.
+Break any skill down into what it is built from — and see the whole tree at a glance.
 
 ![Overview](docs/overview.png)
-![Focus on a skill](docs/focus.png)
 
-## How data is stored
+## How it works
 
-Everything is plain notes — the plugin keeps no database:
+- Every skill is a note.
+- Add what it is built from with **+** — pick an existing note or type a new name.
+- Click a skill to see its full tree of foundations.
+- Mark progress with colored states (for example *Learned*, *Planned*).
 
-```yaml
----
-requires: ["[[Empathy]]", "[[Sentence building]]"]   # what the skill is built from
-state: done                                           # optional, sets the node color
----
-```
+![Focus](docs/focus.png)
 
-`requires` are property links, so Obsidian's own graph, backlinks and rename-updates keep working. A skill is any note inside the plugin folder (default `Hierarchical deconstruction`) or any note with a `requires` property. Node positions, states and force settings live in the plugin's `data.json`.
+## Controls
 
-## Features
+- **+ Node** — new skill
+- **Overview** — back to the whole graph
+- **Double-click** — open the note
+- **Gear** — filters, states, display and forces, just like the core graph
 
-- Graph view (ribbon icon or command *Open hierarchical deconstruction*): click = focus, double-click = open note, right-click = menu.
-- The interface is English; it switches to Russian automatically when Obsidian is set to Russian.
-- **+ Node** creates a new skill; the **+** under a selected node opens the same dialog and attaches the new node as a foundation of the selected one (an existing title is linked, not duplicated).
-- Local graph of any note with adjustable depth.
-- Editable states with colors; live force sliders (center, repel, link strength/distance, hierarchy pull, line width).
-- Cycles are rejected: a skill can't be built from something built from it.
-- Physics by d3-force and WebGL rendering (PIXI), like the core graph.
+![Panel](docs/panel.png)
 
-## Install (manual)
-
-Copy `main.js`, `manifest.json`, `styles.css` into `<vault>/.obsidian/plugins/hide/` and enable the plugin.
-
-## Development
-
-```
-npm install
-npm run build
-```
-
-Release: bump the version in `manifest.json` and `versions.json`, push a git tag equal to the version — the workflow publishes the release.

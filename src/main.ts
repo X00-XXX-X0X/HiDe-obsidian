@@ -1,6 +1,6 @@
 import { tr } from "./i18n";
 import { App, Notice, Plugin, TFile, debounce, normalizePath } from "obsidian";
-import { Entry, PluginSettings, asList, buildGraph, reaches, safeName, sanitizeSettings, wikiTarget } from "./model";
+import { DEFAULT_DISPLAY, DEFAULT_PHYSICS, Display, Entry, Physics, PluginSettings, asList, buildGraph, reaches, safeName, sanitizeSettings, wikiTarget } from "./model";
 import { HideSettingTab } from "./settingsTab";
 import type { GraphData, StateDef } from "./sim";
 import { AddBaseModal, StateModal } from "./modals";
@@ -45,9 +45,8 @@ export default class HidePlugin extends Plugin {
     this.registerEvent(this.app.workspace.on("file-open", (f) => this.views().forEach((v) => v.onFileOpen(f))));
   }
 
-  onunload(): void { /* вид закрывается Обсидианом сам */ }
+  onunload(): void {  }
 
-  // ---------- виды ----------
   views(): HideView[] { return this.app.workspace.getLeavesOfType(VIEW_TYPE).map((l) => l.view).filter((v): v is HideView => v instanceof HideView); }
   refreshViews(): void { this.views().forEach((v) => v.refresh()); }
 
@@ -59,16 +58,16 @@ export default class HidePlugin extends Plugin {
     void workspace.revealLeaf(leaf);
   }
 
-  // ---------- настройки ----------
   private saveLater = debounce(() => void this.saveData(this.settings), 400, true);
   save(): void { this.saveLater(); }
   async saveNow(): Promise<void> { await this.saveData(this.settings); }
-  saveLayout(pos: Record<string, [number, number]>): void { this.settings.layout = pos; this.save(); }
+  saveLayout(pos: Record<string, [number, number]>): void { Object.assign(this.settings.layout, pos); this.save(); }
+  updatePhysics<K extends keyof Physics>(key: K, value: Physics[K]): void { this.settings.physics[key] = value; this.save(); this.views().forEach((v) => v.applySettings()); }
+  updateDisplay<K extends keyof Display>(key: K, value: Display[K]): void { this.settings.display[key] = value; this.save(); this.views().forEach((v) => v.applySettings()); }
+  resetView(): void { this.settings.physics = { ...DEFAULT_PHYSICS }; this.settings.display = { ...DEFAULT_DISPLAY }; this.save(); this.views().forEach((v) => v.applySettings()); }
   private dropLayout(path: string): void { if (path in this.settings.layout) { delete this.settings.layout[path]; this.save(); } }
   private moveLayout(from: string, to: string): void { const l = this.settings.layout; if (from in l) { l[to] = l[from]; delete l[from]; this.save(); } }
 
-  // ---------- данные ----------
-  /** Нода — заметка из папки навыков или любая заметка со свойством requires. */
   isNode(f: TFile): boolean {
     const folder = this.settings.folder;
     if (folder && (f.path === folder || f.path.startsWith(folder + "/"))) return true;
@@ -102,8 +101,6 @@ export default class HidePlugin extends Plugin {
     return this.entries().find((e) => e.title.toLowerCase() === t);
   }
 
-  // ---------- действия ----------
-  /** Создаёт заметку-навык в папке навыков (имя уникально). Возвращает путь. */
   async createNote(title: string): Promise<string> {
     const base = safeName(title);
     const folder = this.settings.folder;
@@ -114,7 +111,6 @@ export default class HidePlugin extends Plugin {
     return path;
   }
 
-  /** Навык `skill` строится из `base`. Ссылка пишется в свойство requires как [[ссылка]], поэтому Обсидиан видит её в своих графе и обратных ссылках. */
   async link(skill: string, base: string): Promise<void> {
     const s = this.file(skill), b = this.file(base);
     if (!s || !b) throw new Error(tr("note not found", "заметка не найдена"));
@@ -141,7 +137,6 @@ export default class HidePlugin extends Plugin {
     await this.app.fileManager.processFrontMatter(f, (fm: Record<string, unknown>) => { if (state) fm.state = state; else delete fm.state; });
   }
 
-  /** Удаление в корзину; ссылки на неё у других навыков убираем, чтобы не оставлять битых. */
   async deleteNote(path: string): Promise<void> {
     const f = this.file(path);
     if (!f) return;
@@ -149,7 +144,7 @@ export default class HidePlugin extends Plugin {
     await this.app.fileManager.trashFile(f);
   }
 
-  setStates(states: StateDef[]): void { this.settings.states = states; this.save(); this.refreshViews(); }
+  setStates(states: StateDef[], rebuild = true): void { this.settings.states = states; this.save(); this.refreshViews(); if (rebuild) this.views().forEach((v) => v.syncPanel()); }
   notice(msg: string): void { new Notice(msg); }
   get appRef(): App { return this.app; }
 }

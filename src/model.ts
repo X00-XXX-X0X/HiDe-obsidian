@@ -1,19 +1,16 @@
 import { tr } from "./i18n";
 import type { GraphData, NodeData, StateDef } from "./sim";
 
-/** Нода-заметка: путь файла — это id. Всё остальное берётся из frontmatter (requires, state). */
 export type Entry = { path: string; title: string; requires: string[]; state: string };
 
 const HEX = /^#[0-9a-fA-F]{6}$/;
 
-/** Ссылка вида [[Заметка]], [[Папка/Заметка#раздел|подпись]] → «Папка/Заметка». Не ссылка — null. */
 export function wikiTarget(s: unknown): string | null {
   if (typeof s !== "string") return null;
   const m = /^\s*!?\[\[([^\]|#^]+?)(?:[#^][^\]|]*)?(?:\|[^\]]*)?\]\]\s*$/.exec(s);
   return m ? m[1].trim() : null;
 }
 
-/** Значение свойства requires в любом виде (список, строка, пусто) → массив строк. */
 export function asList(v: unknown): string[] {
   if (Array.isArray(v)) return v.filter((x): x is string => typeof x === "string");
   if (typeof v === "string" && v.trim()) return [v];
@@ -26,7 +23,7 @@ export function buildGraph(entries: Entry[], states: StateDef[], layout: Record<
   const usedBy = new Map<string, string[]>(entries.map((e) => [e.path, []]));
   const req = new Map<string, string[]>();
   for (const e of entries) {
-    const r = [...new Set(e.requires)].filter((x) => ids.has(x) && x !== e.path);  // ссылки на не-ноды и на себя не показываем
+    const r = [...new Set(e.requires)].filter((x) => ids.has(x) && x !== e.path);
     req.set(e.path, r);
     for (const c of r) usedBy.get(c)!.push(e.path);
   }
@@ -35,7 +32,6 @@ export function buildGraph(entries: Entry[], states: StateDef[], layout: Record<
   return { nodes, states, layout, version: 0 };
 }
 
-/** Из каких нод (прямо или косвенно) строится start. */
 export function reaches(entries: Map<string, string[]>, start: string, target: string): boolean {
   const seen = new Set<string>(), st = [start];
   while (st.length) {
@@ -48,7 +44,6 @@ export function reaches(entries: Map<string, string[]>, start: string, target: s
   return false;
 }
 
-/** Ноды вокруг корня до глубины depth: вниз по основам и вверх по применениям (локальный граф). */
 export function neighborhood(nodes: NodeData[], root: string, depth: number): Set<string> {
   const byId = new Map(nodes.map((n) => [n.id, n]));
   const seen = new Set<string>([root]);
@@ -65,22 +60,26 @@ export function subgraph(nodes: NodeData[], ids: Set<string>): NodeData[] {
   return nodes.filter((n) => ids.has(n.id)).map((n) => ({ ...n, requires: n.requires.filter((x) => ids.has(x)), usedBy: n.usedBy.filter((x) => ids.has(x)) }));
 }
 
-/** Безопасное имя файла из названия: без символов, запрещённых в файлах и ломающих ссылки Обсидиана. */
 export function safeName(title: string): string {
   const s = title.replace(/[\\/:*?"<>|#^[\]]/g, " ").replace(/\s+/g, " ").trim().replace(/^\.+|\.+$/g, "").slice(0, 100).trim();
   return s || tr("New skill", "Новый навык");
 }
 
+export type Physics = { center: number; repel: number; link: number; distance: number; flow: number };
+export type Display = { arrows: boolean; textFade: number; nodeSize: number; lineWidth: number };
 export type PluginSettings = {
-  folder: string;                     // где создаются новые ноды
+  folder: string;
   states: StateDef[];
   layout: Record<string, [number, number]>;
-  physics: { center: number; repel: number; link: number; distance: number; lineWidth: number; flow: number };
+  physics: Physics;
+  display: Display;
   anim: number;
 };
+export const DEFAULT_PHYSICS: Physics = { center: 0.04, repel: 500, link: 0.35, distance: 90, flow: 0 };
+export const DEFAULT_DISPLAY: Display = { arrows: true, textFade: 0, nodeSize: 1, lineWidth: 1 };
 export const DEFAULT_SETTINGS: PluginSettings = {
   folder: "Hierarchical deconstruction", states: [], layout: {}, anim: 1,
-  physics: { center: 0.04, repel: 500, link: 0.35, distance: 90, lineWidth: 1, flow: 0 },
+  physics: { ...DEFAULT_PHYSICS }, display: { ...DEFAULT_DISPLAY },
 };
 
 export function sanitizeSettings(raw: unknown): PluginSettings {
@@ -88,6 +87,7 @@ export function sanitizeSettings(raw: unknown): PluginSettings {
   const d = DEFAULT_SETTINGS;
   const num = (x: unknown, dv: number, lo: number, hi: number) => (typeof x === "number" && isFinite(x) ? Math.min(hi, Math.max(lo, x)) : dv);
   const p = (o.physics ?? {}) as Record<string, unknown>;
+  const v = (o.display ?? {}) as Record<string, unknown>;
   const states: StateDef[] = [];
   if (Array.isArray(o.states)) for (const s of o.states.slice(0, 200)) {
     const x = s as Record<string, unknown>;
@@ -95,15 +95,21 @@ export function sanitizeSettings(raw: unknown): PluginSettings {
       states.push({ id: x.id, name: typeof x.name === "string" && x.name.trim() ? x.name.trim().slice(0, 60) : tr("Untitled", "Без названия"), color: x.color.toLowerCase() });
   }
   const layout: Record<string, [number, number]> = {};
-  if (o.layout && typeof o.layout === "object") for (const [k, v] of Object.entries(o.layout as Record<string, unknown>)) {
-    if (Array.isArray(v) && v.length === 2 && Number.isFinite(+v[0]) && Number.isFinite(+v[1])) layout[k] = [+v[0], +v[1]];
+  if (o.layout && typeof o.layout === "object") for (const [k, val] of Object.entries(o.layout as Record<string, unknown>)) {
+    if (Array.isArray(val) && val.length === 2 && Number.isFinite(+val[0]) && Number.isFinite(+val[1])) layout[k] = [+val[0], +val[1]];
   }
   return {
     folder: typeof o.folder === "string" ? o.folder.replace(/^\/+|\/+$/g, "").slice(0, 200) : d.folder,
     states, layout, anim: num(o.anim, d.anim, 0, 4),
     physics: {
       center: num(p.center, d.physics.center, 0, 0.2), repel: num(p.repel, d.physics.repel, 20, 2000), link: num(p.link, d.physics.link, 0, 1),
-      distance: num(p.distance, d.physics.distance, 20, 300), lineWidth: num(p.lineWidth, d.physics.lineWidth, 0.5, 4), flow: num(p.flow, d.physics.flow, 0, 1),
+      distance: num(p.distance, d.physics.distance, 20, 300), flow: num(p.flow, d.physics.flow, 0, 1),
+    },
+    display: {
+      arrows: typeof v.arrows === "boolean" ? v.arrows : d.display.arrows,
+      textFade: num(v.textFade, d.display.textFade, -3, 3),
+      nodeSize: num(v.nodeSize, d.display.nodeSize, 0.4, 3),
+      lineWidth: num(v.lineWidth ?? p.lineWidth, d.display.lineWidth, 0.5, 4),
     },
   };
 }

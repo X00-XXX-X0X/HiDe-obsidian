@@ -1,11 +1,10 @@
-/* Цвета для движка графа: берём из текущей темы Обсидиана */
 body {
-  --hide-node: var(--text-faint);
+  --hide-node: var(--graph-node);
   --hide-node-hl: var(--text-muted);
   --hide-node-sel: var(--interactive-accent);
-  --hide-edge: var(--background-modifier-border-hover);
+  --hide-edge: var(--graph-line);
   --hide-edge-hl: var(--interactive-accent);
-  --hide-label: var(--text-normal);
+  --hide-label: var(--graph-text);
   --hide-surface: var(--background-secondary);
 }
 
@@ -14,16 +13,6 @@ body {
 .hide-toolbar { position: absolute; top: 10px; left: 10px; z-index: 5; display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
 .hide-toolbar button { background: var(--background-secondary); border: 1px solid var(--background-modifier-border); border-radius: var(--radius-m); padding: 4px 10px; cursor: pointer; box-shadow: none; height: auto; }
 .hide-toolbar button:hover { background: var(--background-modifier-hover); }
-.hide-toolbar button.hide-icon { width: 32px; padding: 5px 0; display: grid; place-items: center; }
-.hide-stepper { display: flex; align-items: center; gap: 6px; background: var(--background-secondary); border: 1px solid var(--background-modifier-border); border-radius: var(--radius-m); padding: 2px 4px 2px 10px; }
-.hide-stepper span { color: var(--text-muted); font-size: var(--font-ui-smaller); }
-.hide-toolbar .hide-stepper button { border: 0; padding: 0 8px; }
-.hide-forces { display: none; position: absolute; top: 50px; left: 10px; z-index: 5; width: 250px; padding: 10px 12px; background: var(--background-secondary); border: 1px solid var(--background-modifier-border); border-radius: var(--radius-l); gap: 8px; }
-.hide-forces.is-open { display: grid; }
-.hide-forces label { display: grid; gap: 2px; font-size: var(--font-ui-smaller); color: var(--text-muted); }
-.hide-forces input[type=range] { width: 100%; }
 .hide-empty { position: absolute; inset: 0; display: grid; place-items: center; color: var(--text-muted); pointer-events: none; }
-.hide-addbox { position: absolute; left: 0; top: 0; margin: -16px 0 0 -110px; width: 220px; z-index: 6; }
-.hide-addbox input { width: 100%; }
 .hide-dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; background: var(--text-faint); vertical-align: middle; }
 .hide-create { color: var(--interactive-accent); }

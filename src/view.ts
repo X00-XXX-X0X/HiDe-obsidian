@@ -1,27 +1,29 @@
+import { ItemView, Menu, TFile, WorkspaceLeaf } from "obsidian";
 import { tr } from "./i18n";
-import { ItemView, Menu, TFile, WorkspaceLeaf, setIcon } from "obsidian";
 import type HidePlugin from "./main";
 import { neighborhood, subgraph } from "./model";
-import { Engine, MIN_REPEL, resetCssCache } from "./sim";
+import { Engine, MIN_REPEL, resetCssCache, type GraphData } from "./sim";
 import { GraphRenderer } from "./render";
-import { NameModal } from "./modals";
+import { AddBaseModal, NameModal } from "./modals";
+import { HidePanel, type Filters } from "./panel";
+
+const DOUBLE_CLICK_MS = 500;
+const DOUBLE_CLICK_PX = 24;
 
 export const VIEW_TYPE = "hide-graph";
 
-/** Hierarchical deconstruction: общий или локальный (root — заметка, вокруг которой строится окрестность). */
 export class HideView extends ItemView {
   eng = new Engine();
   root: string | null = null;
   depth = 2;
   private canvas!: HTMLCanvasElement;
   private gfx!: GraphRenderer;
-  private back!: HTMLButtonElement;
   private empty!: HTMLDivElement;
-  private forces!: HTMLDivElement;
-  private stepper!: HTMLDivElement;
+  private panel!: HidePanel;
   private raf = 0;
   private ro?: ResizeObserver;
-  private focused = false;
+  private lastClick: { id: string; t: number; x: number; y: number } | null = null;
+  private filters: Filters = { query: "", orphans: true };
 
   constructor(leaf: WorkspaceLeaf, private plugin: HidePlugin) { super(leaf); }
 
@@ -34,101 +36,95 @@ export class HideView extends ItemView {
     const s = (state ?? {}) as { root?: string | null; depth?: number };
     this.root = typeof s.root === "string" ? s.root : null;
     this.depth = Math.min(6, Math.max(1, Number(s.depth) || 2));
-    if (this.canvas) { this.syncChrome(); this.refresh(); }
+    if (this.canvas) { this.eng.focusOnClick = !this.root; this.syncPanel(); this.refresh(); }
     await super.setState(state, result);
   }
 
-  async onOpen(): Promise<void> {
+  onOpen(): Promise<void> {
     const el = this.contentEl;
-    el.empty(); el.addClass("hide-view");
-    const bar = el.createDiv({ cls: "hide-toolbar" });
-    const add = bar.createEl("button", { text: tr("+ Node", "+ Нода") });
-    add.onclick = () => this.createStandalone();
-    const fit = bar.createEl("button", { cls: "hide-icon", attr: { "aria-label": tr("Show all nodes", "Показать все ноды") } });
-    setIcon(fit, "maximize"); fit.onclick = () => this.eng.fitAll();
-    this.back = bar.createEl("button", { text: tr("← Back", "← Назад") }); this.back.onclick = () => this.eng.exitFocus();
-    this.stepper = bar.createDiv({ cls: "hide-stepper" });
-    this.stepper.createSpan({ text: tr("Depth", "Глубина") });
-    const minus = this.stepper.createEl("button", { text: "−" }), val = this.stepper.createEl("b"), plus = this.stepper.createEl("button", { text: "+" });
-    const setDepth = (d: number) => { this.depth = Math.min(6, Math.max(1, d)); val.setText(String(this.depth)); this.refresh(); this.app.workspace.requestSaveLayout(); };
-    minus.onclick = () => setDepth(this.depth - 1); plus.onclick = () => setDepth(this.depth + 1);
-    this.stepper.dataset.sync = "1"; (this.stepper as unknown as { _val: HTMLElement })._val = val;
-    const gear = bar.createEl("button", { cls: "hide-icon", attr: { "aria-label": tr("Forces", "Силы") } });
-    setIcon(gear, "sliders-horizontal"); gear.onclick = () => this.forces.toggleClass("is-open", !this.forces.hasClass("is-open"));
-
-    this.forces = el.createDiv({ cls: "hide-forces" });
-    this.buildForces();
+    el.empty();
+    el.addClass("hide-view");
     this.canvas = el.createEl("canvas", { cls: "hide-canvas" });
-    this.empty = el.createDiv({ cls: "hide-empty", text: tr("Nothing here yet. Press “+ Node” to create your first skill.", "Пока пусто. Нажми «+ Нода», чтобы создать первый навык.") });
+    const bar = el.createDiv({ cls: "hide-toolbar" });
+    bar.createEl("button", { text: tr("+ Node", "+ Нода") }).addEventListener("click", () => this.createStandalone());
+    bar.createEl("button", { text: tr("Overview", "Общий план") }).addEventListener("click", () => this.eng.overview());
+    this.empty = el.createDiv({ cls: "hide-empty" });
+    this.panel = new HidePanel(el, this.plugin, {
+      filters: this.filters,
+      isLocal: () => !!this.root,
+      getDepth: () => this.depth,
+      setDepth: (d) => { this.depth = d; this.refresh(); this.app.workspace.requestSaveLayout(); },
+      onFilter: () => this.refresh(),
+      onAnimate: () => { this.eng.animate(); window.setTimeout(() => this.eng.fitAll(), 2200); },
+    });
 
     const e = this.eng;
-    e.onFocus = (f) => { this.focused = f; this.back.toggle(f); };
+    e.focusOnClick = !this.root;
     e.onLayout = (pos) => { if (!this.root) this.plugin.saveLayout(pos); };
-    e.onSelect = () => {};
     this.applySettings();
-    this.syncChrome();
     this.bindPointer();
     this.startLoop();
     this.refresh();
+    return Promise.resolve();
   }
 
-  async onClose(): Promise<void> {
+  onClose(): Promise<void> {
     window.cancelAnimationFrame(this.raf);
     this.ro?.disconnect();
     this.gfx?.destroy();
+    return Promise.resolve();
   }
 
-  // ---------- данные ----------
-  private syncChrome(): void {
-    this.stepper.toggle(!!this.root);
-    const v = (this.stepper as unknown as { _val?: HTMLElement })._val; v?.setText(String(this.depth));
-    this.eng.focusOnClick = !this.root;
-    this.back.toggle(this.focused);
+  syncPanel(): void { this.panel?.sync(); }
+
+  private filtered(g: GraphData): GraphData {
+    const q = this.filters.query.trim().toLowerCase();
+    const keep = new Set<string>();
+    for (const n of g.nodes) {
+      if (n.id === this.root) { keep.add(n.id); continue; }
+      if (q && !n.title.toLowerCase().includes(q)) continue;
+      if (!this.filters.orphans && !n.requires.length && !n.usedBy.length) continue;
+      keep.add(n.id);
+    }
+    return { ...g, nodes: subgraph(g.nodes, keep) };
   }
 
   refresh(): void {
     if (!this.canvas) return;
     const g = this.plugin.graph();
     if (this.root) {
-      if (!g.nodes.some((n) => n.id === this.root)) { this.eng.setGraph({ ...g, nodes: [], layout: {} }); this.empty.setText(tr("This note is no longer a skill.", "Заметка больше не является навыком.")); this.empty.show(); return; }
+      if (!g.nodes.some((n) => n.id === this.root)) {
+        this.eng.setGraph({ ...g, nodes: [], layout: {} });
+        this.empty.setText(tr("This note is no longer a skill.", "Заметка больше не является навыком."));
+        this.empty.show();
+        return;
+      }
       const ids = neighborhood(g.nodes, this.root, this.depth);
-      this.eng.setGraph({ ...g, nodes: subgraph(g.nodes, ids), layout: {} });
+      this.eng.setGraph({ ...this.filtered({ ...g, nodes: subgraph(g.nodes, ids) }), layout: {} });
       this.eng.selectNode(this.root);
       this.empty.hide();
-    } else {
-      this.eng.setGraph(g);
-      this.empty.setText(tr("Nothing here yet. Press “+ Node” to create your first skill.", "Пока пусто. Нажми «+ Нода», чтобы создать первый навык."));
-      this.empty.toggle(g.nodes.length === 0);
+      return;
     }
+    const shown = this.filtered(g);
+    this.eng.setGraph(shown);
+    const none = shown.nodes.length === 0;
+    this.empty.setText(g.nodes.length === 0
+      ? tr("Nothing here yet. Press “+ Node” to create your first skill.", "Пока пусто. Нажми «+ Нода», чтобы создать первый навык.")
+      : tr("No nodes match the filters.", "Нет нод, подходящих под фильтры."));
+    this.empty.toggle(none);
   }
 
   applySettings(): void {
     const s = this.plugin.settings;
     this.eng.anim = s.anim;
-    this.eng.setSettings({ ...s.physics, repel: Math.max(MIN_REPEL, s.physics.repel) });
-    this.forces?.querySelectorAll<HTMLInputElement>("input[data-k]").forEach((i) => { i.value = String(s.physics[i.dataset.k as keyof typeof s.physics]); });
+    this.eng.setSettings({ ...s.physics, repel: Math.max(MIN_REPEL, s.physics.repel), lineWidth: s.display.lineWidth });
+    this.eng.setView({ arrows: s.display.arrows, labelZoom: 0.55 * Math.pow(1.6, -s.display.textFade), nodeScale: s.display.nodeSize });
+    this.panel?.sync();
   }
 
   onTheme(): void { resetCssCache(); this.eng.wake(); }
   onFileOpen(f: TFile | null): void { if (f && this.eng.nodes.has(f.path) && this.eng.mode === "free") this.eng.selectNode(f.path); }
 
-  private buildForces(): void {
-    const defs = [
-      ["center", tr("Center force", "Сила центра"), 0, 0.2, 0.005], ["repel", tr("Repel force", "Сила отталкивания"), MIN_REPEL, 2000, 10], ["link", tr("Link force", "Сила связи"), 0, 1, 0.01],
-      ["distance", tr("Link distance", "Длина связи"), 20, 300, 5], ["flow", tr("Hierarchy pull", "Тяготение иерархии"), 0, 1, 0.05], ["lineWidth", tr("Line width", "Толщина линий"), 0.5, 4, 0.1],
-    ] as const;
-    for (const [k, name, min, max, step] of defs) {
-      const row = this.forces.createEl("label");
-      row.createSpan({ text: name });
-      const r = row.createEl("input", { attr: { type: "range", min: String(min), max: String(max), step: String(step), "data-k": k } });
-      r.oninput = () => {
-        this.plugin.settings.physics[k] = +r.value; this.plugin.save();
-        this.plugin.views().forEach((v) => v.applySettings());
-      };
-    }
-  }
-
-  // ---------- «+ Нода»: самостоятельная новая нода ----------
   private createStandalone(): void {
     new NameModal(this.app, (title) => void (async () => {
       try {
@@ -139,41 +135,35 @@ export class HideView extends ItemView {
     })()).open();
   }
 
-  // ---------- «+» под нодой: то же окно, что у «+ Нода», но нода привязывается к выбранной ----------
   private addFoundation(id: string): void {
     this.eng.selectNode(id);
     const name = this.plugin.graph().nodes.find((n) => n.id === id)?.title ?? "";
-    new NameModal(this.app, (title) => void this.submitAdd(id, title), tr(`New foundation for “${name}”`, `Новая основа для «${name}»`), tr("Name (or an existing skill)", "Название (или существующего навыка)")).open();
+    new AddBaseModal(this.app, this.plugin, id, tr(`Foundation for “${name}”: pick a skill or type a new name`, `Основа для «${name}»: выбери навык или введи новое название`)).open();
   }
+
   private startAdd(): void {
     const id = this.eng.plusNodeId();
     if (!id) { this.plugin.notice(tr("Select a node to add a foundation to.", "Выбери ноду, к которой добавить основу.")); return; }
     this.addFoundation(id);
   }
-  private async submitAdd(skill: string, title: string): Promise<void> {
-    try {
-      const ex = this.plugin.findByTitle(title);
-      if (ex?.path === skill) throw new Error(tr("A skill cannot be built from itself", "Навык не может строиться сам из себя"));
-      const base = ex ? ex.path : await this.plugin.createNote(title);
-      await this.plugin.link(skill, base);
-      window.setTimeout(() => this.refresh(), 300);
-    } catch (e) { this.plugin.notice(e instanceof Error ? e.message : String(e)); }
-  }
 
-  // ---------- рисование и мышь ----------
   private startLoop(): void {
     const cv = this.canvas;
     this.gfx = new GraphRenderer(cv);
     let last = performance.now();
     const resize = () => {
       const r = cv.getBoundingClientRect();
-      this.eng.w = r.width; this.eng.h = r.height;
-      this.gfx?.resize(Math.max(1, r.width), Math.max(1, r.height));
+      this.eng.w = r.width;
+      this.eng.h = r.height;
+      this.gfx.resize(Math.max(1, r.width), Math.max(1, r.height));
       this.eng.wake();
     };
-    this.ro = new ResizeObserver(resize); this.ro.observe(cv); resize();
+    this.ro = new ResizeObserver(resize);
+    this.ro.observe(cv);
+    resize();
     const loop = (t: number) => {
-      const dt = (t - last) / 1000; last = t;
+      const dt = (t - last) / 1000;
+      last = t;
       if (cv.isShown()) {
         this.eng.frame(dt);
         if (this.eng.consumeRedraw()) this.gfx.draw(this.eng);
@@ -181,7 +171,6 @@ export class HideView extends ItemView {
       this.raf = window.requestAnimationFrame(loop);
     };
     this.raf = window.requestAnimationFrame(loop);
-
   }
 
   private bindPointer(): void {
@@ -201,17 +190,27 @@ export class HideView extends ItemView {
       if (down.plus) return;
       if (!down.moved && Math.hypot(x - down.x, y - down.y) > 4) { down.moved = true; if (down.id) eng.startDrag(down.id); }
       if (down.moved) { if (eng.dragId) eng.dragTo(x, y); else eng.pan(x - down.lx, y - down.ly); }
-      down.lx = x; down.ly = y;
+      down.lx = x;
+      down.ly = y;
     });
-    cv.addEventListener("pointerup", () => {
+    cv.addEventListener("pointerup", (e) => {
       if (!down) return;
-      if (down.plus) this.startAdd();
-      else if (!down.moved) eng.click(down.id);
-      eng.endDrag(); down = null;
+      const d = down;
+      down = null;
+      eng.endDrag();
+      if (d.plus) { this.startAdd(); return; }
+      if (d.moved) return;
+      const now = performance.now(), prev = this.lastClick;
+      if (prev && now - prev.t < DOUBLE_CLICK_MS && Math.hypot(d.x - prev.x, d.y - prev.y) < DOUBLE_CLICK_PX) {
+        this.lastClick = null;
+        this.openNote(prev.id, e.ctrlKey || e.metaKey);
+        return;
+      }
+      this.lastClick = d.id ? { id: d.id, t: now, x: d.x, y: d.y } : null;
+      eng.click(d.id);
     });
-    cv.addEventListener("pointerleave", () => { if (!down) { eng.hover = null; eng.plusHover = false; if (!eng.addingFor) eng.plusFor = null; eng.wake(); } });
+    cv.addEventListener("pointerleave", () => { if (!down) { eng.hover = null; eng.plusHover = false; eng.plusFor = null; eng.wake(); } });
     cv.addEventListener("wheel", (e) => { e.preventDefault(); const [x, y] = pos(e); eng.zoomAt(x, y, Math.exp(-e.deltaY * 0.0012)); }, { passive: false });
-    cv.addEventListener("dblclick", (e) => { const [x, y] = pos(e); const id = eng.hit(x, y); if (id) this.openNote(id, e.ctrlKey || e.metaKey); });
     cv.addEventListener("contextmenu", (e) => {
       const [x, y] = pos(e), id = eng.hit(x, y);
       if (!id) return;
@@ -231,7 +230,7 @@ export class HideView extends ItemView {
     m.addItem((i) => i.setTitle(tr("Open in new tab", "Открыть в новой вкладке")).setIcon("file-plus").onClick(() => this.openNote(id, true)));
     m.addItem((i) => i.setTitle(tr("Local graph", "Локальный граф")).setIcon("network").onClick(() => void p.openView(id)));
     m.addSeparator();
-    m.addItem((i) => i.setTitle(tr("Add foundation…", "Добавить основу…")).setIcon("plus").onClick(() => { this.addFoundation(id); }));
+    m.addItem((i) => i.setTitle(tr("Add foundation…", "Добавить основу…")).setIcon("plus").onClick(() => this.addFoundation(id)));
     m.addSeparator();
     m.addItem((i) => i.setTitle(tr("No state", "Без состояния")).setIcon("circle").onClick(() => void p.setState(id, "")));
     for (const s of p.settings.states) m.addItem((i) => i.setTitle(tr("State: ", "Состояние: ") + s.name).setIcon("circle-dot").onClick(() => void p.setState(id, s.id)));

@@ -1,12 +1,11 @@
 import { tr } from "./i18n";
 import { App, Modal, SuggestModal, TFile, prepareFuzzySearch } from "obsidian";
 import type HidePlugin from "./main";
-import type { Entry } from "./model";
+import { reaches, type Entry } from "./model";
 import type { StateDef } from "./sim";
 
 type Item = { kind: "existing"; e: Entry } | { kind: "create"; title: string };
 
-/** Выбор существующего навыка или создание нового по названию. skill === null — просто новый навык; иначе выбранный/созданный становится основой для skill. */
 export class AddBaseModal extends SuggestModal<Item> {
   constructor(app: App, private plugin: HidePlugin, private skill: string | null, placeholder: string) {
     super(app);
@@ -15,17 +14,33 @@ export class AddBaseModal extends SuggestModal<Item> {
   }
 
   getSuggestions(q: string): Item[] {
-    const query = q.trim(), fz = prepareFuzzySearch(query);
-    const found = this.plugin.entries().filter((e) => e.path !== this.skill)
-      .map((e) => ({ e, m: fz(e.title) })).filter((x) => x.m).sort((a, b) => b.m!.score - a.m!.score).slice(0, 40)
-      .map((x): Item => ({ kind: "existing", e: x.e }));
+    const query = q.trim();
+    const entries = this.plugin.entries();
+    const graph = new Map(entries.map((e) => [e.path, e.requires]));
+    const own = this.skill ? graph.get(this.skill) ?? [] : [];
+    const allowed = entries.filter((e) => !this.skill || (e.path !== this.skill && !own.includes(e.path) && !reaches(graph, e.path, this.skill)));
+    let found: Item[];
+    if (query) {
+      const fz = prepareFuzzySearch(query);
+      found = allowed.map((e) => ({ e, m: fz(e.title) })).filter((x) => x.m).sort((a, b) => b.m!.score - a.m!.score).slice(0, 40)
+        .map((x): Item => ({ kind: "existing", e: x.e }));
+    } else {
+      found = allowed.sort((a, b) => a.title.localeCompare(b.title)).slice(0, 60).map((e): Item => ({ kind: "existing", e }));
+    }
     if (query && !found.some((i) => i.kind === "existing" && i.e.title.toLowerCase() === query.toLowerCase())) found.push({ kind: "create", title: query });
     return found;
   }
 
   renderSuggestion(item: Item, el: HTMLElement): void {
-    el.setText(item.kind === "existing" ? item.e.title : tr(`Create “${item.title}”`, `Создать «${item.title}»`));
-    if (item.kind === "create") el.addClass("hide-create");
+    if (item.kind === "create") {
+      el.setText(tr(`Create “${item.title}”`, `Создать «${item.title}»`));
+      el.addClass("hide-create");
+      return;
+    }
+    const dot = el.createSpan({ cls: "hide-dot" });
+    const color = this.plugin.settings.states.find((s) => s.id === item.e.state)?.color;
+    if (color) dot.style.background = color;
+    el.createSpan({ text: " " + item.e.title });
   }
 
   onChooseSuggestion(item: Item): void { void this.choose(item); }
@@ -40,7 +55,6 @@ export class AddBaseModal extends SuggestModal<Item> {
 
 type StateItem = StateDef | { id: ""; name: string; color: string };
 
-/** Выбор состояния навыка (цвет ноды). */
 export class StateModal extends SuggestModal<StateItem> {
   constructor(app: App, private plugin: HidePlugin, private path: string) {
     super(app);
