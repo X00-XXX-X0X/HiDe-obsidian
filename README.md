@@ -22,3 +22,8 @@ Break any skill down into what it is built from — and see the whole tree at a 
 
 ![Panel](docs/panel.png)
 
+## Install
+
+Settings → Community plugins → Browse → search **Hierarchical deconstruction**.
+
+MIT license.
