@@ -154,6 +154,53 @@ export function focusLayout(rootId: string, requires: Map<string, string[]>, tit
     for (let l = 1; l < real.length; l++) settle(l, up);
     for (let l = real.length - 2; l >= 0; l--) settle(l, down);
   }
+  const edgeList: [string, string][] = [];
+  for (const id of set) for (const c of kids(id)) edgeList.push([id, c]);
+  const linked = new Set(edgeList.map(([a, b]) => `${a}|${b}`));
+  const SAFE = GAP_X * 0.5;
+  const clutter = () => {
+    let total = 0;
+    for (const a of set) for (const b of set) {
+      if (level.get(b)! !== level.get(a)! + 1) continue;
+      if (linked.has(`${a}|${b}`) || linked.has(`${b}|${a}`)) continue;
+      if (Math.abs(xs.get(a)! - xs.get(b)!) < SAFE) total++;
+    }
+    for (const [u, c] of edgeList) {
+      const lu = level.get(u)!, lc = level.get(c)!;
+      for (const n of set) {
+        const ln = level.get(n)!;
+        if (ln <= lu || ln >= lc || n === u || n === c) continue;
+        const t = (ln - lu) / (lc - lu);
+        if (Math.abs(xs.get(n)! - (xs.get(u)! + (xs.get(c)! - xs.get(u)!) * t)) < SAFE) total++;
+      }
+    }
+    return total;
+  };
+  const tangled = () => {
+    let total = 0;
+    for (let i = 0; i < edgeList.length; i++) for (let j = i + 1; j < edgeList.length; j++) {
+      const [a, b] = edgeList[i], [c, d] = edgeList[j];
+      if (a === c || a === d || b === c || b === d) continue;
+      const ax = xs.get(a)!, ay = level.get(a)!, bx = xs.get(b)!, by = level.get(b)!;
+      const cx = xs.get(c)!, cy = level.get(c)!, dx = xs.get(d)!, dy = level.get(d)!;
+      const o1 = (bx - ax) * (cy - ay) - (by - ay) * (cx - ax), o2 = (bx - ax) * (dy - ay) - (by - ay) * (dx - ax);
+      const o3 = (dx - cx) * (ay - cy) - (dy - cy) * (ax - cx), o4 = (dx - cx) * (by - cy) - (dy - cy) * (bx - cx);
+      if (o1 * o2 < 0 && o3 * o4 < 0) total++;
+    }
+    return total;
+  };
+  const score = () => clutter() + 3 * tangled();
+  let cur = score();
+  for (let pass = 0; pass < 8 && cur > 0 && set.size <= 120; pass++) {
+    let improved = false;
+    for (const row of real) for (let i = 0; i < row.length; i++) for (const d of [SAFE, -SAFE]) {
+      const side = d > 0 ? row.slice(i) : row.slice(0, i + 1);
+      side.forEach((id) => xs.set(id, xs.get(id)! + d));
+      const after = score();
+      if (after < cur) { cur = after; improved = true; } else side.forEach((id) => xs.set(id, xs.get(id)! - d));
+    }
+    if (!improved) break;
+  }
   const offset = xs.get(rootId)!;
   const out = new Map<string, [number, number]>();
   for (const id of set) out.set(id, [rootX + xs.get(id)! - offset, rootY + level.get(id)! * GAP_Y]);
