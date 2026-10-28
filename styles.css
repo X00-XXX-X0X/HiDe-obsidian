@@ -16,3 +16,4 @@ body {
 .hide-empty { position: absolute; inset: 0; display: grid; place-items: center; color: var(--text-muted); pointer-events: none; }
 .hide-dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; background: var(--text-faint); vertical-align: middle; }
 .hide-create { color: var(--interactive-accent); }
+.graph-controls .graph-control-section.is-collapsed > .tree-item-children { display: none; }
