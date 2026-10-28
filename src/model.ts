@@ -69,6 +69,7 @@ export type Physics = { center: number; repel: number; link: number; distance: n
 export type Display = { arrows: boolean; textFade: number; nodeSize: number; lineWidth: number };
 export type PluginSettings = {
   folder: string;
+  ignored: string[];
   states: StateDef[];
   layout: Record<string, [number, number]>;
   physics: Physics;
@@ -78,7 +79,7 @@ export type PluginSettings = {
 export const DEFAULT_PHYSICS: Physics = { center: 0.04, repel: 500, link: 0.35, distance: 90, flow: 0 };
 export const DEFAULT_DISPLAY: Display = { arrows: true, textFade: 0, nodeSize: 1, lineWidth: 1 };
 export const DEFAULT_SETTINGS: PluginSettings = {
-  folder: "Hierarchical deconstruction", states: [], layout: {}, anim: 1,
+  folder: "Hierarchical deconstruction", ignored: [], states: [], layout: {}, anim: 1,
   physics: { ...DEFAULT_PHYSICS }, display: { ...DEFAULT_DISPLAY },
 };
 
@@ -100,6 +101,7 @@ export function sanitizeSettings(raw: unknown): PluginSettings {
   }
   return {
     folder: typeof o.folder === "string" ? o.folder.replace(/^\/+|\/+$/g, "").slice(0, 200) : d.folder,
+    ignored: Array.isArray(o.ignored) ? o.ignored.filter((x): x is string => typeof x === "string").map((x) => x.trim().replace(/^\/+|\/+$/g, "")).filter(Boolean).slice(0, 200) : [],
     states, layout, anim: num(o.anim, d.anim, 0, 4),
     physics: {
       center: num(p.center, d.physics.center, 0, 0.2), repel: num(p.repel, d.physics.repel, 20, 2000), link: num(p.link, d.physics.link, 0, 1),

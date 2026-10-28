@@ -1,5 +1,5 @@
 import { tr } from "./i18n";
-import { App, Notice, Plugin, TFile, debounce, normalizePath } from "obsidian";
+import { App, MarkdownView, Notice, Plugin, TFile, debounce, normalizePath } from "obsidian";
 import { DEFAULT_DISPLAY, DEFAULT_PHYSICS, Display, Entry, Physics, PluginSettings, asList, buildGraph, reaches, safeName, sanitizeSettings, wikiTarget } from "./model";
 import { HideSettingTab } from "./settingsTab";
 import type { GraphData, StateDef } from "./sim";
@@ -36,6 +36,24 @@ export default class HidePlugin extends Plugin {
       return true;
     } });
 
+    const actions = new WeakMap<MarkdownView, HTMLElement>();
+    const syncActions = () => {
+      this.app.workspace.iterateAllLeaves((leaf) => {
+        const v = leaf.view;
+        if (!(v instanceof MarkdownView)) return;
+        let el = actions.get(v);
+        if (!el) {
+          el = v.addAction("network", tr("Make a HiDe skill", "Сделать навыком HiDe"), () => { if (v.file) void this.makeNode(v.file); });
+          actions.set(v, el);
+        }
+        el.toggle(!!v.file && !this.isNode(v.file));
+      });
+    };
+    this.app.workspace.onLayoutReady(syncActions);
+    this.registerEvent(this.app.workspace.on("layout-change", syncActions));
+    this.registerEvent(this.app.workspace.on("active-leaf-change", syncActions));
+    this.registerEvent(this.app.metadataCache.on("changed", syncActions));
+
     const refresh = debounce(() => this.refreshViews(), 150, true);
     this.registerEvent(this.app.metadataCache.on("changed", refresh));
     this.registerEvent(this.app.metadataCache.on("resolved", refresh));
@@ -68,7 +86,12 @@ export default class HidePlugin extends Plugin {
   private dropLayout(path: string): void { if (path in this.settings.layout) { delete this.settings.layout[path]; this.save(); } }
   private moveLayout(from: string, to: string): void { const l = this.settings.layout; if (from in l) { l[to] = l[from]; delete l[from]; this.save(); } }
 
+  isIgnored(f: TFile): boolean {
+    return this.settings.ignored.some((d) => f.path.startsWith(d + "/"));
+  }
+
   isNode(f: TFile): boolean {
+    if (this.isIgnored(f)) return false;
     const folder = this.settings.folder;
     if (folder && (f.path === folder || f.path.startsWith(folder + "/"))) return true;
     const fm = this.app.metadataCache.getFileCache(f)?.frontmatter;
@@ -109,6 +132,11 @@ export default class HidePlugin extends Plugin {
     while (this.app.vault.getAbstractFileByPath(path)) path = normalizePath(`${folder ? folder + "/" : ""}${base} ${i++}.md`);
     await this.app.vault.create(path, "---\nrequires: []\n---\n");
     return path;
+  }
+
+  async makeNode(f: TFile): Promise<void> {
+    if (this.isIgnored(f)) { new Notice(tr("This note is in an ignored folder.", "Заметка лежит в игнорируемой папке.")); return; }
+    await this.app.fileManager.processFrontMatter(f, (fm: Record<string, unknown>) => { if (!("requires" in fm)) fm.requires = []; });
   }
 
   async link(skill: string, base: string): Promise<void> {
